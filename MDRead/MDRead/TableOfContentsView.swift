@@ -27,7 +27,7 @@ struct TableOfContentsView: View {
             }
         }
         .listStyle(.sidebar)
-        .frame(minWidth: 200)
+        .frame(minWidth: 250, idealWidth: 280)
     }
 
     private func indentation(for level: Int) -> CGFloat {

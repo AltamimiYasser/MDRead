@@ -33,6 +33,19 @@ extension FocusedValues {
     }
 }
 
+// MARK: - Search Action
+
+struct SearchActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+extension FocusedValues {
+    var searchAction: (() -> Void)? {
+        get { self[SearchActionKey.self] }
+        set { self[SearchActionKey.self] = newValue }
+    }
+}
+
 // MARK: - PDF Export Action
 
 struct ExportPDFActionKey: FocusedValueKey {

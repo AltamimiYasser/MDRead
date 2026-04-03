@@ -13,6 +13,7 @@ struct MDReadApp: App {
     @FocusedBinding(\.fontSize) private var fontSize: Double?
     @FocusedValue(\.printAction) private var printAction
     @FocusedValue(\.exportPDFAction) private var exportPDFAction
+    @FocusedValue(\.searchAction) private var searchAction
 
     var body: some Scene {
         DocumentGroup(viewing: MDReadDocument.self) { file in
@@ -40,6 +41,15 @@ struct MDReadApp: App {
                     fontSize = 14
                 }
                 .keyboardShortcut("0", modifiers: .command)
+            }
+
+            // Find
+            CommandGroup(replacing: .textEditing) {
+                Button("Find...") {
+                    searchAction?()
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(searchAction == nil)
             }
 
             // Print / Export

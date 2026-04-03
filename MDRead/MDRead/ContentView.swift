@@ -20,7 +20,7 @@ struct ContentView: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var webView: WKWebView?
-    @Environment(\.isSearching) private var isSearching
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -56,11 +56,12 @@ struct ContentView: View {
                 }
             }
         }
+        .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 400)
         .searchable(text: $searchText, prompt: "Search in document")
+        .searchFocused($isSearchFocused)
         .navigationTitle("")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                // Appearance toggle
                 Picker("Appearance", selection: Bindable(appearance).mode) {
                     ForEach(AppearanceManager.Mode.allCases, id: \.self) { mode in
                         Label(mode.label, systemImage: mode.icon)
@@ -76,6 +77,7 @@ struct ContentView: View {
         .focusedValue(\.fontSize, $fontSize)
         .focusedValue(\.printAction, printDocument)
         .focusedValue(\.exportPDFAction, exportPDF)
+        .focusedValue(\.searchAction, { isSearchFocused = true })
         .onChange(of: fontSize) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: "fontSize")
         }
