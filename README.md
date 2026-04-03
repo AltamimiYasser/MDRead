@@ -77,7 +77,7 @@ Or open `MDRead/MDRead.xcodeproj` in Xcode and hit Cmd+R.
 
 ## Requirements
 
-- macOS 14.0 or later
+- macOS 15.0 or later
 - Xcode 16+ (for building from source)
 
 ## License

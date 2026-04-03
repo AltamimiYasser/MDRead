@@ -32,7 +32,7 @@ jobs:
             -configuration Release \
             -archivePath ${{ runner.temp }}/MDRead.xcarchive \
             -destination 'generic/platform=macOS' \
-            MACOSX_DEPLOYMENT_TARGET=14.0 \
+            MACOSX_DEPLOYMENT_TARGET=15.0 \
             SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
