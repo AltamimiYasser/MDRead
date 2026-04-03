@@ -10,14 +10,14 @@ import UniformTypeIdentifiers
 import WebKit
 
 struct ContentView: View {
-    let document: MDReadDocument
     @Environment(AppearanceManager.self) private var appearance
+    @State private var documentManager = DocumentManager()
     @State private var fontSize: Double = {
         let saved = UserDefaults.standard.double(forKey: "fontSize")
         return saved > 0 ? saved : 14
     }()
     @State private var tocItems: [TOCItem] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var searchText = ""
     @State private var activeHeadingId: String?
     @State private var webView: WKWebView?
@@ -25,47 +25,53 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            Group {
-                if tocItems.isEmpty {
-                    ContentUnavailableView("No Headings", systemImage: "list.bullet", description: Text("This document has no headings."))
-                } else {
-                    TableOfContentsView(items: tocItems, activeHeadingId: activeHeadingId) { item in
-                        scrollToHeading(item)
-                    }
-                }
-            }
+            SidebarContainerView(
+                tocItems: tocItems,
+                activeHeadingId: activeHeadingId,
+                currentFileURL: documentManager.currentFileURL,
+                onSelectHeading: { scrollToHeading($0) }
+            )
             .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 450)
         } detail: {
             ZStack {
-                MarkdownWebView(
-                    markdown: document.text,
-                    theme: appearance.mode.cssValue,
-                    fontSize: CGFloat(fontSize),
-                    searchText: searchText,
-                    onTOCUpdate: { items in
-                        tocItems = items
-                    },
-                    onActiveHeadingChange: { headingId in
-                        activeHeadingId = headingId
-                    },
-                    onLoadComplete: {
-                        isLoading = false
-                    },
-                    onWebViewReady: { wv in
-                        webView = wv
-                    }
-                )
-                .frame(minWidth: 500, minHeight: 400)
+                if documentManager.currentFileURL != nil {
+                    MarkdownWebView(
+                        markdown: documentManager.documentText,
+                        theme: appearance.mode.cssValue,
+                        fontSize: CGFloat(fontSize),
+                        searchText: searchText,
+                        onTOCUpdate: { items in
+                            tocItems = items
+                        },
+                        onActiveHeadingChange: { headingId in
+                            activeHeadingId = headingId
+                        },
+                        onLoadComplete: {
+                            isLoading = false
+                        },
+                        onWebViewReady: { wv in
+                            webView = wv
+                            documentManager.webView = wv
+                        }
+                    )
+                    .frame(minWidth: 500, minHeight: 400)
 
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.large)
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.large)
+                    }
+                } else {
+                    ContentUnavailableView(
+                        "No Document Open",
+                        systemImage: "doc.text",
+                        description: Text("Open a Markdown file from the sidebar or use File > Open.")
+                    )
                 }
             }
         }
         .searchable(text: $searchText, prompt: "Search in document")
         .searchFocused($isSearchFocused)
-        .navigationTitle("")
+        .navigationTitle(documentManager.currentFileURL?.lastPathComponent ?? "MDRead")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Picker("Appearance", selection: Bindable(appearance).mode) {
@@ -81,15 +87,29 @@ struct ContentView: View {
         .preferredColorScheme(appearance.mode.colorScheme)
         .background(WindowAccessor())
         .focusedValue(\.fontSize, $fontSize)
-        .focusedValue(\.printAction, printDocument)
-        .focusedValue(\.exportPDFAction, exportPDF)
+        .focusedValue(\.printAction, { documentManager.printDocument(webView: webView) })
+        .focusedValue(\.exportPDFAction, { documentManager.exportPDF(webView: webView) })
         .focusedValue(\.searchAction, { isSearchFocused = true })
         .onChange(of: fontSize) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: "fontSize")
         }
-        .onChange(of: document.text) {
+        .onChange(of: documentManager.documentText) {
             isLoading = true
+            tocItems = []
+            activeHeadingId = nil
         }
+        .onAppear {
+            documentManager.loadInitialState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openFileRequest)) { notification in
+            if let url = notification.object as? URL {
+                documentManager.openFile(url: url)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showOpenPanel)) { _ in
+            documentManager.showOpenPanel()
+        }
+        .environment(documentManager)
     }
 
     private func scrollToHeading(_ item: TOCItem) {
@@ -97,56 +117,11 @@ struct ContentView: View {
             "document.getElementById('\(item.id)').scrollIntoView({behavior: 'smooth', block: 'start'})"
         )
     }
-
-    private func printDocument() {
-        guard let webView else { return }
-        let printInfo = NSPrintInfo.shared
-        printInfo.horizontalPagination = .fit
-        printInfo.verticalPagination = .automatic
-        let printOp = webView.printOperation(with: printInfo)
-        printOp.showsPrintPanel = true
-        printOp.showsProgressPanel = true
-        printOp.run()
-    }
-
-    private func exportPDF() {
-        guard let webView else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = "document.pdf"
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            webView.createPDF { result in
-                if case .success(let data) = result {
-                    try? data.write(to: url)
-                }
-            }
-        }
-    }
 }
 
 #Preview {
-    ContentView(document: MDReadDocument(text: """
-    # Hello MDRead
-
-    This is a **Markdown** reader app.
-
-    ## Code Example
-
-    ```swift
-    let greeting = "Hello, World!"
-    print(greeting)
-    ```
-
-    ## Features
-
-    - Item one
-    - Item two
-    - Item three
-
-    > A blockquote for testing
-
-    [Link example](https://example.com)
-    """))
-    .environment(AppearanceManager())
+    ContentView()
+        .environment(AppearanceManager())
+        .environment(FileExplorerViewModel())
+        .environment(SandboxBookmarkManager())
 }
