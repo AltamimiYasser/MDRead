@@ -22,7 +22,6 @@ struct MDReadDocument: FileDocument {
         UTType(filenameExtension: "mkdn"),
         UTType(filenameExtension: "mkd"),
         UTType(filenameExtension: "mdx"),
-        UTType(filenameExtension: "txt"),
     ].compactMap { $0 }
 
     init(configuration: ReadConfiguration) throws {
