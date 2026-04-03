@@ -8,7 +8,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-nonisolated struct MDReadDocument: FileDocument {
+struct MDReadDocument: FileDocument {
     var text: String
 
     init(text: String = "") {
