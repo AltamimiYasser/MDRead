@@ -24,13 +24,16 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            if tocItems.isEmpty {
-                ContentUnavailableView("No Headings", systemImage: "list.bullet", description: Text("This document has no headings."))
-            } else {
-                TableOfContentsView(items: tocItems) { item in
-                    scrollToHeading(item)
+            Group {
+                if tocItems.isEmpty {
+                    ContentUnavailableView("No Headings", systemImage: "list.bullet", description: Text("This document has no headings."))
+                } else {
+                    TableOfContentsView(items: tocItems) { item in
+                        scrollToHeading(item)
+                    }
                 }
             }
+            .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 450)
         } detail: {
             ZStack {
                 MarkdownWebView(
@@ -56,7 +59,6 @@ struct ContentView: View {
                 }
             }
         }
-        .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 400)
         .searchable(text: $searchText, prompt: "Search in document")
         .searchFocused($isSearchFocused)
         .navigationTitle("")
