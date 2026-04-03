@@ -16,10 +16,14 @@ struct MDReadDocument: FileDocument {
     }
 
     static let readableContentTypes: [UTType] = [
-        UTType(filenameExtension: "md") ?? .plainText,
-        UTType(filenameExtension: "markdown") ?? .plainText,
-        .plainText
-    ]
+        UTType(filenameExtension: "md"),
+        UTType(filenameExtension: "markdown"),
+        UTType(filenameExtension: "mdown"),
+        UTType(filenameExtension: "mkdn"),
+        UTType(filenameExtension: "mkd"),
+        UTType(filenameExtension: "mdx"),
+        UTType(filenameExtension: "txt"),
+    ].compactMap { $0 }
 
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents,

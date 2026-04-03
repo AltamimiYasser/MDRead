@@ -15,13 +15,15 @@
 				<string>markdown</string>
 				<string>mdown</string>
 				<string>mkdn</string>
+				<string>mkd</string>
+				<string>mdx</string>
+				<string>txt</string>
 			</array>
 			<key>LSHandlerRank</key>
 			<string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>net.daringfireball.markdown</string>
-				<string>public.plain-text</string>
 			</array>
 		</dict>
 	</array>
