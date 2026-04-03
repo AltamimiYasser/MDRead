@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var tocItems: [TOCItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var activeHeadingId: String?
     @State private var webView: WKWebView?
     @FocusState private var isSearchFocused: Bool
 
@@ -28,7 +29,7 @@ struct ContentView: View {
                 if tocItems.isEmpty {
                     ContentUnavailableView("No Headings", systemImage: "list.bullet", description: Text("This document has no headings."))
                 } else {
-                    TableOfContentsView(items: tocItems) { item in
+                    TableOfContentsView(items: tocItems, activeHeadingId: activeHeadingId) { item in
                         scrollToHeading(item)
                     }
                 }
@@ -43,6 +44,9 @@ struct ContentView: View {
                     searchText: searchText,
                     onTOCUpdate: { items in
                         tocItems = items
+                    },
+                    onActiveHeadingChange: { headingId in
+                        activeHeadingId = headingId
                     },
                     onLoadComplete: {
                         isLoading = false

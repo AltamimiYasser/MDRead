@@ -14,6 +14,7 @@ struct MarkdownWebView: NSViewRepresentable {
     var fontSize: CGFloat = 14
     var searchText: String = ""
     var onTOCUpdate: (([TOCItem]) -> Void)?
+    var onActiveHeadingChange: ((String) -> Void)?
     var onLoadComplete: (() -> Void)?
     var onWebViewReady: ((WKWebView) -> Void)?
 
@@ -24,12 +25,14 @@ struct MarkdownWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "tocHandler")
+        config.userContentController.add(context.coordinator, name: "activeHeadingHandler")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
         context.coordinator.onTOCUpdate = onTOCUpdate
+        context.coordinator.onActiveHeadingChange = onActiveHeadingChange
         context.coordinator.onLoadComplete = onLoadComplete
 
         DispatchQueue.main.async {
@@ -41,6 +44,7 @@ struct MarkdownWebView: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onTOCUpdate = onTOCUpdate
+        context.coordinator.onActiveHeadingChange = onActiveHeadingChange
         context.coordinator.onLoadComplete = onLoadComplete
 
         let contentChanged = context.coordinator.lastMarkdown != markdown
@@ -86,6 +90,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var lastFontSize: CGFloat?
         var lastSearchText: String?
         var onTOCUpdate: (([TOCItem]) -> Void)?
+        var onActiveHeadingChange: ((String) -> Void)?
         var onLoadComplete: (() -> Void)?
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -97,12 +102,15 @@ struct MarkdownWebView: NSViewRepresentable {
             didReceive message: WKScriptMessage
         ) {
             MainActor.assumeIsolated {
-                guard message.name == "tocHandler",
-                      let body = message.body as? String,
-                      let data = body.data(using: .utf8),
-                      let items = try? JSONDecoder().decode([TOCItem].self, from: data)
-                else { return }
-                onTOCUpdate?(items)
+                if message.name == "tocHandler",
+                   let body = message.body as? String,
+                   let data = body.data(using: .utf8),
+                   let items = try? JSONDecoder().decode([TOCItem].self, from: data) {
+                    onTOCUpdate?(items)
+                } else if message.name == "activeHeadingHandler",
+                          let headingId = message.body as? String {
+                    onActiveHeadingChange?(headingId)
+                }
             }
         }
     }
@@ -251,6 +259,36 @@ struct MarkdownWebView: NSViewRepresentable {
             });
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tocHandler) {
                 window.webkit.messageHandlers.tocHandler.postMessage(JSON.stringify(headings));
+            }
+
+            // Track active heading on scroll
+            const allHeadings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            if (allHeadings.length > 0 && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.activeHeadingHandler) {
+                let ticking = false;
+                const headingEls = Array.from(allHeadings);
+                window.addEventListener('scroll', () => {
+                    if (!ticking) {
+                        requestAnimationFrame(() => {
+                            let active = headingEls[0];
+                            for (const h of headingEls) {
+                                if (h.getBoundingClientRect().top <= 80) {
+                                    active = h;
+                                } else {
+                                    break;
+                                }
+                            }
+                            if (active && active.id) {
+                                window.webkit.messageHandlers.activeHeadingHandler.postMessage(active.id);
+                            }
+                            ticking = false;
+                        });
+                        ticking = true;
+                    }
+                }, { passive: true });
+                // Fire once on load
+                if (headingEls[0] && headingEls[0].id) {
+                    window.webkit.messageHandlers.activeHeadingHandler.postMessage(headingEls[0].id);
+                }
             }
         } else {
             document.querySelector('.markdown-body').innerText = markdown;
