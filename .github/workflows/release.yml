@@ -44,11 +44,25 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Export app
+      - name: Create DMG
         run: |
           APP_PATH="${{ runner.temp }}/MDRead.xcarchive/Products/Applications/MDRead.app"
-          cd "$(dirname "$APP_PATH")"
-          zip -r -y ${{ runner.temp }}/MDRead.zip MDRead.app
+          DMG_DIR="${{ runner.temp }}/dmg-staging"
+          mkdir -p "$DMG_DIR"
+
+          # Copy app to staging
+          cp -R "$APP_PATH" "$DMG_DIR/"
+
+          # Create symlink to Applications folder
+          ln -s /Applications "$DMG_DIR/Applications"
+
+          # Create DMG
+          hdiutil create \
+            -volname "MDRead" \
+            -srcfolder "$DMG_DIR" \
+            -ov \
+            -format UDZO \
+            "${{ runner.temp }}/MDRead.dmg"
 
       - name: Get version from tag
         id: version
@@ -62,11 +76,11 @@ jobs:
             ## MDRead ${{ steps.version.outputs.VERSION }}
 
             ### Installation
-            1. Download `MDRead.zip` below
-            2. Unzip and drag `MDRead.app` to your Applications folder
+            1. Download `MDRead.dmg` below
+            2. Open the DMG and drag `MDRead.app` to your Applications folder
             3. Open any `.md` file with MDRead
 
             > **Note:** Since this app is not notarized, you may need to right-click > Open the first time.
-          files: ${{ runner.temp }}/MDRead.zip
+          files: ${{ runner.temp }}/MDRead.dmg
           draft: false
           prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
