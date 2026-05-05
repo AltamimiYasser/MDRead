@@ -7,6 +7,7 @@
 
 import SwiftUI
 import WebKit
+import AppKit
 
 struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
@@ -26,6 +27,7 @@ struct MarkdownWebView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "tocHandler")
         config.userContentController.add(context.coordinator, name: "activeHeadingHandler")
+        config.userContentController.add(context.coordinator, name: "copyCodeHandler")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -40,6 +42,13 @@ struct MarkdownWebView: NSViewRepresentable {
         }
 
         return webView
+    }
+
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        let controller = nsView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "tocHandler")
+        controller.removeScriptMessageHandler(forName: "activeHeadingHandler")
+        controller.removeScriptMessageHandler(forName: "copyCodeHandler")
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
@@ -110,6 +119,10 @@ struct MarkdownWebView: NSViewRepresentable {
                 } else if message.name == "activeHeadingHandler",
                           let headingId = message.body as? String {
                     onActiveHeadingChange?(headingId)
+                } else if message.name == "copyCodeHandler",
+                          let codeText = message.body as? String {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(codeText, forType: .string)
                 }
             }
         }
@@ -248,6 +261,8 @@ struct MarkdownWebView: NSViewRepresentable {
                 });
             }
 
+            enhanceCodeBlocks();
+
             // Extract TOC and assign heading IDs
             const headings = [];
             document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((el, i) => {
@@ -292,6 +307,36 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         } else {
             document.querySelector('.markdown-body').innerText = markdown;
+        }
+
+        function enhanceCodeBlocks() {
+            document.querySelectorAll('pre').forEach((pre) => {
+                if (pre.parentElement && pre.parentElement.classList.contains('code-block')) return;
+
+                const code = pre.querySelector('code');
+                const wrapper = document.createElement('div');
+                wrapper.className = 'code-block';
+
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'code-copy-button';
+                button.textContent = 'Copy';
+                button.setAttribute('aria-label', 'Copy code block');
+                button.addEventListener('click', () => {
+                    const text = code ? code.textContent : pre.textContent;
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.copyCodeHandler) {
+                        window.webkit.messageHandlers.copyCodeHandler.postMessage(text || '');
+                    }
+                    button.textContent = 'Copied';
+                    window.setTimeout(() => {
+                        button.textContent = 'Copy';
+                    }, 1200);
+                });
+
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(button);
+                wrapper.appendChild(pre);
+            });
         }
         </script>
         </body>
@@ -373,21 +418,72 @@ struct MarkdownWebView: NSViewRepresentable {
         background-color: rgba(175, 184, 193, 0.2);
         border-radius: 6px;
     }
+    .code-block {
+        position: relative;
+        margin-bottom: 16px;
+    }
+    .code-copy-button {
+        position: sticky;
+        top: 8px;
+        float: right;
+        z-index: 2;
+        margin: 8px 8px -34px 0;
+        appearance: none;
+        border: 1px solid #d1d9e0;
+        border-radius: 6px;
+        padding: 4px 8px;
+        color: #1f2328;
+        background: rgba(246, 248, 250, 0.94);
+        font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+    .code-copy-button:hover {
+        background: #ffffff;
+    }
     pre {
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
         font-size: 85%;
         padding: 16px;
-        overflow: auto;
+        overflow-x: hidden;
+        overflow-y: visible;
         line-height: 1.45;
         background-color: #f6f8fa;
         border-radius: 6px;
         border: 1px solid #d1d9e0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
     }
     pre code {
         background-color: transparent;
         padding: 0;
         font-size: 100%;
         border-radius: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    pre code.hljs {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+    html[data-theme="dark"] .code-copy-button {
+        color: #e6edf3;
+        background: rgba(40, 44, 52, 0.94);
+        border-color: #444c56;
+    }
+    html[data-theme="dark"] .code-copy-button:hover {
+        background: #30363d;
+    }
+    @media (prefers-color-scheme: dark) {
+        html[data-theme="auto"] .code-copy-button {
+            color: #e6edf3;
+            background: rgba(40, 44, 52, 0.94);
+            border-color: #444c56;
+        }
+        html[data-theme="auto"] .code-copy-button:hover {
+            background: #30363d;
+        }
     }
     blockquote {
         margin: 0 0 16px 0;

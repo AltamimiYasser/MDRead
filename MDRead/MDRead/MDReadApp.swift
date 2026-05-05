@@ -8,15 +8,34 @@
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var isResolvingInitialLaunch = true
+
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
-        // Post a notification so the active ContentView picks it up
-        NotificationCenter.default.post(name: .openFileRequest, object: url)
+        if isResolvingInitialLaunch {
+            DocumentManager.prepareInitialExternalOpen(url: url)
+            NotificationCenter.default.post(name: .loadInitialStateRequest, object: nil)
+        } else {
+            // Running app: route into the active window.
+            NotificationCenter.default.post(name: .openFileRequest, object: url)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Prevent the default "Open" dialog from appearing
-        UserDefaults.standard.set(true, forKey: "NSQuitAlwaysKeepsWindows")
+        DispatchQueue.main.async {
+            DocumentManager.resolveNormalLaunch()
+            NotificationCenter.default.post(name: .loadInitialStateRequest, object: nil)
+            self.isResolvingInitialLaunch = false
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        DocumentManager.isAppTerminating = true
+        return .terminateNow
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        DocumentManager.isAppTerminating = true
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -36,12 +55,13 @@ struct MDReadApp: App {
     @FocusedValue(\.searchAction) private var searchAction
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environment(appearanceManager)
                 .environment(fileExplorerVM)
                 .environment(bookmarkManager)
         }
+        .restorationBehavior(.disabled)
         .commands {
             // File > Open
             CommandGroup(replacing: .newItem) {

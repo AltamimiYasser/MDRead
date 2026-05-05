@@ -85,7 +85,9 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(appearance.mode.colorScheme)
-        .background(WindowAccessor())
+        .background(WindowAccessor(onWindowClose: {
+            documentManager.windowDidClose()
+        }))
         .focusedValue(\.fontSize, $fontSize)
         .focusedValue(\.printAction, { documentManager.printDocument(webView: webView) })
         .focusedValue(\.exportPDFAction, { documentManager.exportPDF(webView: webView) })
@@ -99,6 +101,9 @@ struct ContentView: View {
             activeHeadingId = nil
         }
         .onAppear {
+            documentManager.loadInitialState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .loadInitialStateRequest)) { _ in
             documentManager.loadInitialState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFileRequest)) { notification in

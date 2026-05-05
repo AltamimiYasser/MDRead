@@ -13,6 +13,7 @@ import WebKit
 extension Notification.Name {
     static let openFileRequest = Notification.Name("openFileRequest")
     static let showOpenPanel = Notification.Name("showOpenPanel")
+    static let loadInitialStateRequest = Notification.Name("loadInitialStateRequest")
 }
 
 enum OptionClickBehavior: String, CaseIterable {
@@ -29,12 +30,17 @@ enum OptionClickBehavior: String, CaseIterable {
 
 @Observable
 class DocumentManager {
+    let windowSessionID = UUID().uuidString
     var currentFileURL: URL?
     var documentText: String = ""
     weak var webView: WKWebView?
 
     /// File URL to load in the next new window/tab (used for coordination)
     static var pendingFileURL: URL?
+    private static var pendingLaunchFileURL: URL?
+    private static var launchModeResolved = false
+    private static var didRestoreSavedSession = false
+    static var isAppTerminating = false
 
     var optionClickBehavior: OptionClickBehavior {
         didSet {
@@ -66,7 +72,7 @@ class DocumentManager {
             currentFileURL = url
             documentText = text
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
-            UserDefaults.standard.set(url.path, forKey: "lastOpenedFilePath")
+            DocumentSessionStore.updateWindow(id: windowSessionID, fileURL: url)
         } catch {}
     }
 
@@ -140,19 +146,51 @@ class DocumentManager {
 
     private var didLoadInitial = false
 
-    /// Load the last opened file or default to home directory reveal
+    /// Load pending files or restore the saved open-window session.
     func loadInitialState() {
         guard !didLoadInitial else { return }
+        guard Self.launchModeResolved else { return }
         didLoadInitial = true
 
-        if let pending = Self.pendingFileURL {
+        if let pending = Self.pendingLaunchFileURL {
+            Self.pendingLaunchFileURL = nil
+            openFile(url: pending)
+        } else if let pending = Self.pendingFileURL {
             Self.pendingFileURL = nil
             openFile(url: pending)
-        } else if let lastPath = UserDefaults.standard.string(forKey: "lastOpenedFilePath") {
-            let url = URL(fileURLWithPath: lastPath)
-            if FileManager.default.fileExists(atPath: lastPath) {
-                openFile(url: url)
-            }
+        } else {
+            restoreSavedSessionIfNeeded()
+        }
+    }
+
+    func windowDidClose() {
+        guard !Self.isAppTerminating else { return }
+        DocumentSessionStore.removeWindow(id: windowSessionID)
+    }
+
+    static func prepareInitialExternalOpen(url: URL) {
+        DocumentSessionStore.clear()
+        pendingLaunchFileURL = url
+        didRestoreSavedSession = true
+        launchModeResolved = true
+    }
+
+    static func resolveNormalLaunch() {
+        guard !launchModeResolved else { return }
+        launchModeResolved = true
+    }
+
+    private func restoreSavedSessionIfNeeded() {
+        guard !Self.didRestoreSavedSession else { return }
+        Self.didRestoreSavedSession = true
+
+        let urls = DocumentSessionStore.restorableFileURLs()
+        DocumentSessionStore.clear()
+        guard let firstURL = urls.first else { return }
+        openFile(url: firstURL)
+
+        for url in urls.dropFirst() {
+            openFileInNewWindow(url: url)
         }
     }
 
@@ -213,6 +251,64 @@ class DocumentManager {
     static func copyAsMarkdownLink(url: URL) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("[\(url.lastPathComponent)](\(url.path))", forType: .string)
+    }
+}
+
+struct DocumentSessionEntry: Codable, Equatable {
+    let windowID: String
+    let path: String
+}
+
+enum DocumentSessionStore {
+    static let userDefaultsKey = "openDocumentSession"
+
+    static func entries(defaults: UserDefaults = .standard) -> [DocumentSessionEntry] {
+        guard let data = defaults.data(forKey: userDefaultsKey),
+              let entries = try? JSONDecoder().decode([DocumentSessionEntry].self, from: data) else {
+            return []
+        }
+        return entries
+    }
+
+    static func updateWindow(
+        id: String,
+        fileURL: URL,
+        defaults: UserDefaults = .standard
+    ) {
+        var entries = entries(defaults: defaults)
+        entries.removeAll { $0.windowID == id }
+        entries.append(DocumentSessionEntry(windowID: id, path: fileURL.path))
+        save(entries, defaults: defaults)
+    }
+
+    static func removeWindow(id: String, defaults: UserDefaults = .standard) {
+        var entries = entries(defaults: defaults)
+        entries.removeAll { $0.windowID == id }
+        save(entries, defaults: defaults)
+    }
+
+    static func clear(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: userDefaultsKey)
+        defaults.removeObject(forKey: "lastOpenedFilePath")
+    }
+
+    static func restorableFileURLs(
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        entries(defaults: defaults)
+            .map { URL(fileURLWithPath: $0.path) }
+            .filter { fileManager.fileExists(atPath: $0.path) }
+    }
+
+    private static func save(_ entries: [DocumentSessionEntry], defaults: UserDefaults) {
+        guard !entries.isEmpty else {
+            defaults.removeObject(forKey: userDefaultsKey)
+            return
+        }
+        if let data = try? JSONEncoder().encode(entries) {
+            defaults.set(data, forKey: userDefaultsKey)
+        }
     }
 }
 
