@@ -28,12 +28,28 @@ enum OptionClickBehavior: String, CaseIterable {
     }
 }
 
+enum UnsavedChangeResolution {
+    case save
+    case discard
+    case cancel
+}
+
 @Observable
 class DocumentManager {
     let windowSessionID = UUID().uuidString
     var currentFileURL: URL?
     var documentText: String = ""
+    var draftText: String = ""
+    var isEditing = false
+    var lastSaveError: String?
     weak var webView: WKWebView?
+    var unsavedChangeResolver: (URL?) -> UnsavedChangeResolution = { url in
+        DocumentManager.promptForUnsavedChanges(fileURL: url)
+    }
+
+    var hasUnsavedChanges: Bool {
+        isEditing && draftText != documentText
+    }
 
     /// File URL to load in the next new window/tab (used for coordination)
     static var pendingFileURL: URL?
@@ -66,11 +82,56 @@ class DocumentManager {
         optionClickBehavior = OptionClickBehavior(rawValue: raw) ?? .newTab
     }
 
+    func beginEditing() {
+        guard currentFileURL != nil else { return }
+        draftText = documentText
+        isEditing = true
+    }
+
+    @discardableResult
+    func requestEndEditing() -> Bool {
+        guard isEditing else { return true }
+        return resolveUnsavedChangesBeforeLeavingEditMode()
+    }
+
+    func toggleEditing() {
+        if isEditing {
+            _ = requestEndEditing()
+        } else {
+            beginEditing()
+        }
+    }
+
+    @discardableResult
+    func saveDraft() -> Bool {
+        guard let currentFileURL else { return false }
+        do {
+            try draftText.write(to: currentFileURL, atomically: true, encoding: .utf8)
+            documentText = draftText
+            lastSaveError = nil
+            NSDocumentController.shared.noteNewRecentDocumentURL(currentFileURL)
+            DocumentSessionStore.updateWindow(id: windowSessionID, fileURL: currentFileURL)
+            return true
+        } catch {
+            lastSaveError = error.localizedDescription
+            Self.showSaveError(error, fileURL: currentFileURL)
+            return false
+        }
+    }
+
+    func discardDraft() {
+        draftText = documentText
+        isEditing = false
+    }
+
     func openFile(url: URL) {
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
+            guard resolveUnsavedChangesBeforeLeavingEditMode() else { return }
             currentFileURL = url
             documentText = text
+            draftText = text
+            isEditing = false
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
             DocumentSessionStore.updateWindow(id: windowSessionID, fileURL: url)
         } catch {}
@@ -194,7 +255,57 @@ class DocumentManager {
         }
     }
 
+    private func resolveUnsavedChangesBeforeLeavingEditMode() -> Bool {
+        guard hasUnsavedChanges else {
+            isEditing = false
+            draftText = documentText
+            return true
+        }
+
+        switch unsavedChangeResolver(currentFileURL) {
+        case .save:
+            guard saveDraft() else { return false }
+            isEditing = false
+            return true
+        case .discard:
+            discardDraft()
+            return true
+        case .cancel:
+            return false
+        }
+    }
+
     // MARK: - Static helpers
+
+    static func promptForUnsavedChanges(fileURL: URL?) -> UnsavedChangeResolution {
+        let alert = NSAlert()
+        let name = fileURL?.lastPathComponent ?? "this document"
+        alert.messageText = "Save changes to \(name)?"
+        alert.informativeText = "Your changes will be lost if you do not save them."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .save
+        case .alertSecondButtonReturn:
+            return .discard
+        default:
+            return .cancel
+        }
+    }
+
+    static func showSaveError(_ error: Error, fileURL: URL?) {
+        let alert = NSAlert()
+        let name = fileURL?.lastPathComponent ?? "document"
+        alert.messageText = "Could not save \(name)"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
 
     /// Export a file to PDF without opening it in the viewer
     static func exportFileToPDF(fileURL: URL) {

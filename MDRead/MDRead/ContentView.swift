@@ -35,28 +35,36 @@ struct ContentView: View {
         } detail: {
             ZStack {
                 if documentManager.currentFileURL != nil {
-                    MarkdownWebView(
-                        markdown: documentManager.documentText,
-                        theme: appearance.mode.cssValue,
-                        fontSize: CGFloat(fontSize),
-                        searchText: searchText,
-                        onTOCUpdate: { items in
-                            tocItems = items
-                        },
-                        onActiveHeadingChange: { headingId in
-                            activeHeadingId = headingId
-                        },
-                        onLoadComplete: {
-                            isLoading = false
-                        },
-                        onWebViewReady: { wv in
-                            webView = wv
-                            documentManager.webView = wv
-                        }
-                    )
-                    .frame(minWidth: 500, minHeight: 400)
+                    if documentManager.isEditing {
+                        MarkdownSourceEditor(
+                            text: Bindable(documentManager).draftText,
+                            fontSize: CGFloat(fontSize)
+                        )
+                        .frame(minWidth: 500, minHeight: 400)
+                    } else {
+                        MarkdownWebView(
+                            markdown: documentManager.documentText,
+                            theme: appearance.mode.cssValue,
+                            fontSize: CGFloat(fontSize),
+                            searchText: searchText,
+                            onTOCUpdate: { items in
+                                tocItems = items
+                            },
+                            onActiveHeadingChange: { headingId in
+                                activeHeadingId = headingId
+                            },
+                            onLoadComplete: {
+                                isLoading = false
+                            },
+                            onWebViewReady: { wv in
+                                webView = wv
+                                documentManager.webView = wv
+                            }
+                        )
+                        .frame(minWidth: 500, minHeight: 400)
+                    }
 
-                    if isLoading {
+                    if isLoading && !documentManager.isEditing {
                         ProgressView()
                             .controlSize(.large)
                     }
@@ -71,9 +79,35 @@ struct ContentView: View {
         }
         .searchable(text: $searchText, prompt: "Search in document")
         .searchFocused($isSearchFocused)
-        .navigationTitle(documentManager.currentFileURL?.lastPathComponent ?? "MDRead")
+        .navigationTitle(windowTitle)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Toggle(isOn: Binding(
+                    get: { documentManager.isEditing },
+                    set: { newValue in
+                        if newValue {
+                            documentManager.beginEditing()
+                        } else {
+                            _ = documentManager.requestEndEditing()
+                        }
+                    }
+                )) {
+                    Label("Edit", systemImage: "square.and.pencil")
+                }
+                .toggleStyle(.button)
+                .disabled(documentManager.currentFileURL == nil)
+                .help("Edit Markdown source")
+
+                if documentManager.isEditing {
+                    Button {
+                        _ = documentManager.saveDraft()
+                    } label: {
+                        Label("Save", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(!documentManager.hasUnsavedChanges)
+                    .help("Save Markdown file")
+                }
+
                 Picker("Appearance", selection: Bindable(appearance).mode) {
                     ForEach(AppearanceManager.Mode.allCases, id: \.self) { mode in
                         Label(mode.label, systemImage: mode.icon)
@@ -92,6 +126,8 @@ struct ContentView: View {
         .focusedValue(\.printAction, { documentManager.printDocument(webView: webView) })
         .focusedValue(\.exportPDFAction, { documentManager.exportPDF(webView: webView) })
         .focusedValue(\.searchAction, { isSearchFocused = true })
+        .focusedValue(\.saveAction, { documentManager.saveDraft() })
+        .focusedValue(\.canSaveDocument, documentManager.hasUnsavedChanges)
         .onChange(of: fontSize) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: "fontSize")
         }
@@ -115,6 +151,11 @@ struct ContentView: View {
             documentManager.showOpenPanel()
         }
         .environment(documentManager)
+    }
+
+    private var windowTitle: String {
+        let title = documentManager.currentFileURL?.lastPathComponent ?? "MDRead"
+        return documentManager.hasUnsavedChanges ? "\(title) *" : title
     }
 
     private func scrollToHeading(_ item: TOCItem) {

@@ -53,6 +53,8 @@ struct MDReadApp: App {
     @FocusedValue(\.printAction) private var printAction
     @FocusedValue(\.exportPDFAction) private var exportPDFAction
     @FocusedValue(\.searchAction) private var searchAction
+    @FocusedValue(\.saveAction) private var saveAction
+    @FocusedValue(\.canSaveDocument) private var canSaveDocument
 
     var body: some Scene {
         WindowGroup(id: "main") {
@@ -71,6 +73,14 @@ struct MDReadApp: App {
                     NotificationCenter.default.post(name: .showOpenPanel, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: .command)
+            }
+
+            CommandGroup(replacing: .saveItem) {
+                Button("Save") {
+                    saveAction?()
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(canSaveDocument != true)
             }
 
             // Font size commands

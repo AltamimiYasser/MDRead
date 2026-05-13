@@ -58,3 +58,25 @@ extension FocusedValues {
         set { self[ExportPDFActionKey.self] = newValue }
     }
 }
+
+// MARK: - Save Action
+
+struct SaveActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+struct CanSaveDocumentKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+extension FocusedValues {
+    var saveAction: (() -> Void)? {
+        get { self[SaveActionKey.self] }
+        set { self[SaveActionKey.self] = newValue }
+    }
+
+    var canSaveDocument: Bool? {
+        get { self[CanSaveDocumentKey.self] }
+        set { self[CanSaveDocumentKey.self] = newValue }
+    }
+}
